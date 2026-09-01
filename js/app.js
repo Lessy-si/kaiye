@@ -1,4 +1,4 @@
-import { PACKS, SHELF, packTheme, isChildPack } from "./packs.js?v=37";
+import { PACKS, SHELF, packTheme, isChildPack } from "./packs.js?v=38";
 import {
   getDesk,
   activeSeat,
@@ -22,9 +22,9 @@ import {
   resonance,
   remindBanner,
   dayKey
-} from "./desk.js?v=37";
-import { speech, toggleRecord, playBlob, resetSpeech } from "./speak-audio.js?v=37";
-import { unseenQueue, reviewQueue, rateCard, srsStats, formatInterval, formatWait, unseenAll } from "./srs.js?v=37";
+} from "./desk.js?v=38";
+import { speech, toggleRecord, playBlob, resetSpeech } from "./speak-audio.js?v=38";
+import { unseenQueue, reviewQueue, rateCard, srsStats, formatInterval, formatWait, unseenAll, dumpPackSrs, mergePackSrs } from "./srs.js?v=38";
 import {
   observePos,
   observeRate,
@@ -35,8 +35,11 @@ import {
   mergeUnique,
   nextMove,
   exportLoop,
-  cardState
-} from "./loop.js?v=37";
+  cardState,
+  buildSlip,
+  parseSlip,
+  importSlip
+} from "./loop.js?v=38";
 
 const POS = [
   { id: "n.", zh: "名词" },
@@ -54,7 +57,7 @@ const SHARE_URL = "https://lessy-si.github.io/kaiye/get.html";
 const EYE_KEY = "kaiye-eye";
 let installPrompt = null;
 
-const MORE_VIEWS = new Set(["more", "memory", "progress", "shop", "srs", "install"]);
+const MORE_VIEWS = new Set(["more", "memory", "progress", "shop", "srs", "install", "slip"]);
 const PREVIEW_VIEWS = new Set(["preview", "review", "speak", "read"]);
 
 const state = {
@@ -767,9 +770,9 @@ function viewMore() {
       <button type="button" onclick="window.Kaiye.setView('memory')"><b>词表</b><span>课后单词与语法对照</span></button>
       <button type="button" onclick="window.Kaiye.setView('progress')"><b>进度</b><span>灯火、墨滴、本周练习</span></button>
       <button type="button" onclick="window.Kaiye.setView('shop')"><b>墨水店</b><span>家里写进盲盒的奖</span></button>
+      <button type="button" onclick="window.Kaiye.setView('slip')"><b>孩子的练习怎么转</b><span>学习机发给家里，盯牢接着转</span></button>
       <button type="button" onclick="window.Kaiye.setView('install')"><b>装到这台设备</b><span>平板 / 希沃学习机 · 可离线</span></button>
       <button type="button" onclick="window.Kaiye.toggleEye()"><b>护眼台灯</b><span>${eyeOn() ? "开着 · 字暖、蓝光低" : "关着 · 适合夜间亮屏"}</span></button>
-      <button type="button" onclick="window.Kaiye.copyLoop()"><b>复制盯牢账本</b><span>给教练会话读，不上传</span></button>
     </div>
   `;
 }
@@ -792,7 +795,59 @@ function viewInstall() {
       <p><b>希沃 / 学习机</b> 自带浏览器打开地址 → 菜单「添加到桌面」。</p>
       <p><b>安卓平板</b> Chrome 菜单「安装应用」或「添加到主屏幕」。</p>
       <p><b>iPad</b> Safari 分享 → 添加到主屏幕。不要用微信打开。</p>
-      <p class="meta">进度只留在这台机器。孩子练习册默认开护眼台灯。</p>
+      <p class="meta">进度先留在这台机器。练完后：更多 → 孩子的练习怎么转 → 发给家里。</p>
+    </article>
+  `;
+}
+
+function childSeat() {
+  return getDesk().seats.find((s) => s.kind === "child") || { id: "child", name: "孩子" };
+}
+
+function childPackId() {
+  return isChildPack(pack().id) ? pack().id : childSeat().pack || "g5";
+}
+
+function currentSlip() {
+  const child = childSeat();
+  const packId = childPackId();
+  const p = PACKS[packId] || pack();
+  const seat = isChildPack(pack().id) ? activeSeat() : child;
+  const unit = packId === "g5" ? (p.units || []).find((u) => u.id === g5ActiveId()) : null;
+  return buildSlip({
+    seatId: seat.id,
+    seatName: seat.name,
+    packId,
+    packTitle: p.examShort || packId,
+    unitLabel: unit?.n ? `Unit ${unit.n}` : "",
+    srs: dumpPackSrs(["g5", "ket"]),
+    cards: p.cards || []
+  });
+}
+
+function viewSlip() {
+  const packId = childPackId();
+  const p = PACKS[packId] || pack();
+  const watch = watchList(childSeat().id, packId, p.cards || []);
+  const pinN = watch.cards.length + watch.skills.length;
+  return `
+    <p class="kicker">孩子的练习怎么转</p>
+    <article class="panel">
+      <h2>三环，不上云</h2>
+      <p>学习机里：选错就钉住，下次打开先练，连对两次才拿掉。现在孩子座位盯牢 ${pinN} 个。</p>
+      <p>发给家里：把家书贴到微信。家长在这台设备收下后，家里课桌接着盯同一批词。</p>
+      <p class="meta">照片和录音不随家书走。成人雅思卡也不会混进去。</p>
+      <div class="actions">
+        <button class="primary" type="button" onclick="window.Kaiye.copySlip()">发给家里</button>
+        <button class="ghost" type="button" onclick="document.getElementById('slip-file').click()">从文件收下</button>
+      </div>
+    </article>
+    <article class="panel">
+      <label class="kicker" for="slip-box">收下孩子的练习</label>
+      <textarea id="slip-box" class="slip-box" placeholder="把学习机复制的整段家书贴在这里。"></textarea>
+      <div class="actions">
+        <button class="primary" type="button" onclick="window.Kaiye.takeSlip()">收下</button>
+      </div>
     </article>
   `;
 }
@@ -1247,7 +1302,8 @@ const views = {
   read: viewRead,
   memory: viewMemory,
   progress: viewProgress,
-  install: viewInstall
+  install: viewInstall,
+  slip: viewSlip
 };
 
 function render() {
@@ -1521,6 +1577,50 @@ function copyShare() {
   toast(SHARE_URL);
 }
 
+function copySlip() {
+  const { text } = currentSlip();
+  const ok = () => toast("家书已复制。发给家里，让他们打开开页收下。");
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(ok).catch(() => downloadLoop(text));
+    return;
+  }
+  downloadLoop(text);
+}
+
+function takeSlip(raw) {
+  const text = raw || $("slip-box")?.value || "";
+  const slip = parseSlip(text);
+  if (!slip) {
+    toast("这不是开页家书。请贴学习机「发给家里」复制的整段。");
+    return;
+  }
+  const seat = childSeat();
+  const loopHit = importSlip(slip, seat.id);
+  if (!loopHit.ok) {
+    toast(loopHit.reason || "收下失败。");
+    return;
+  }
+  const srsN = mergePackSrs(slip.srs || {});
+  toast(`收下了。孩子座位盯牢 ${loopHit.pins} 个，间隔记录 ${srsN} 条。去今天接着练。`);
+  if (slip.packId && PACKS[slip.packId] && isChildPack(slip.packId) && state.packId !== slip.packId) {
+    setPack(slip.packId);
+    return;
+  }
+  deskSwitch(seat.id);
+  state.view = "today";
+  syncFromSeat();
+  render();
+}
+
+function onSlipFile(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => takeSlip(String(reader.result || ""));
+  reader.readAsText(file);
+}
+
 async function installApp() {
   if (installPrompt) {
     installPrompt.prompt();
@@ -1647,6 +1747,8 @@ window.Kaiye = {
   checkRead,
   copyLoop,
   copyShare,
+  copySlip,
+  takeSlip,
   toggleEye,
   installApp,
   revealGrammar,
@@ -1662,6 +1764,7 @@ window.Kaiye = {
 };
 
 $("portrait-file")?.addEventListener("change", onPortrait);
+$("slip-file")?.addEventListener("change", onSlipFile);
 
 document.addEventListener("click", (event) => {
   if (!state.childMenuOpen) return;

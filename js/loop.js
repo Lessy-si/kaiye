@@ -261,6 +261,102 @@ export function exportLoop() {
   return JSON.stringify(load(), null, 2);
 }
 
+const SLIP_MARK = "---KAIYE---";
+
+function mergeCardRec(a, b) {
+  if (!a) return { ...freshCard(), ...b };
+  if (!b) return a;
+  const later = (Number(b.lastAt) || 0) >= (Number(a.lastAt) || 0) ? b : a;
+  const pin = Boolean(a.pin || b.pin);
+  return {
+    pin,
+    misses: Math.max(Number(a.misses) || 0, Number(b.misses) || 0),
+    hits: Math.max(Number(a.hits) || 0, Number(b.hits) || 0),
+    streak: pin ? Math.min(Number(a.streak) || 0, Number(b.streak) || 0) : Math.max(Number(a.streak) || 0, Number(b.streak) || 0),
+    posMisses: Math.max(Number(a.posMisses) || 0, Number(b.posMisses) || 0),
+    again: Math.max(Number(a.again) || 0, Number(b.again) || 0),
+    hard: Math.max(Number(a.hard) || 0, Number(b.hard) || 0),
+    lastReason: later.lastReason || a.lastReason || "",
+    lastAt: Math.max(Number(a.lastAt) || 0, Number(b.lastAt) || 0)
+  };
+}
+
+function mergeSkillRec(a, b) {
+  if (!a) return { ...freshSkill(), ...b };
+  if (!b) return a;
+  const later = (Number(b.lastAt) || 0) >= (Number(a.lastAt) || 0) ? b : a;
+  return {
+    pin: Boolean(a.pin || b.pin),
+    misses: Math.max(Number(a.misses) || 0, Number(b.misses) || 0),
+    lastNote: later.lastNote || a.lastNote || "",
+    lastAt: Math.max(Number(a.lastAt) || 0, Number(b.lastAt) || 0)
+  };
+}
+
+export function buildSlip({ seatId, seatName, packId, packTitle, unitLabel, srs, cards }) {
+  const watch = watchList(seatId, packId, cards || []);
+  const store = load();
+  const bucket = packBucket(store, seatId, packId);
+  const wordLine = watch.cards.length
+    ? watch.cards.map((c) => `${c.lemma}（${c.misses}次${c.stubborn ? "，反复不会" : ""}）`).join("、")
+    : "本课盯牢暂时是空的";
+  const skillLine = watch.skills.map((s) => s.note).join("；");
+  const note = [
+    `开页家书`,
+    `${seatName || "孩子"} · ${packTitle || packId}${unitLabel ? ` · ${unitLabel}` : ""}`,
+    `盯牢 ${watch.cards.length} 个：${wordLine}`,
+    skillLine ? `开口/阅读：${skillLine}` : "",
+    `请家里打开开页 → 更多 → 收下孩子的练习，把整段贴进去。`
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const slip = {
+    kind: "kaiye-slip-v1",
+    exportedAt: new Date().toISOString(),
+    seatId,
+    seatName: seatName || "孩子",
+    packId,
+    loop: { cards: bucket.cards, skills: bucket.skills },
+    srs: srs || {},
+    watch: watch.cards.map((c) => ({ id: c.id, lemma: c.lemma, misses: c.misses, stubborn: c.stubborn }))
+  };
+  return { note, slip, text: `${note}\n${SLIP_MARK}\n${JSON.stringify(slip)}` };
+}
+
+export function parseSlip(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return null;
+  const cut = text.indexOf(SLIP_MARK);
+  const json = cut >= 0 ? text.slice(cut + SLIP_MARK.length).trim() : text;
+  try {
+    const slip = JSON.parse(json);
+    if (slip?.kind !== "kaiye-slip-v1") return null;
+    return slip;
+  } catch {
+    return null;
+  }
+}
+
+export function importSlip(slip, seatId) {
+  if (!slip || slip.kind !== "kaiye-slip-v1") return { ok: false, reason: "不是开页家书。" };
+  const packId = slip.packId || "g5";
+  if (packId !== "g5" && packId !== "ket") {
+    return { ok: false, reason: "家书只能收孩子的练习册。" };
+  }
+  const id = seatId || slip.seatId || "child";
+  const store = load();
+  const bucket = packBucket(store, id, packId);
+  const incoming = slip.loop || {};
+  for (const [cardId, rec] of Object.entries(incoming.cards || {})) {
+    bucket.cards[cardId] = mergeCardRec(bucket.cards[cardId], rec);
+  }
+  for (const [skillId, rec] of Object.entries(incoming.skills || {})) {
+    bucket.skills[skillId] = mergeSkillRec(bucket.skills[skillId], rec);
+  }
+  save(store);
+  return { ok: true, packId, pins: Object.values(bucket.cards).filter((c) => c.pin).length };
+}
+
 export function unpinNeed() {
   return UNPIN_STREAK;
 }

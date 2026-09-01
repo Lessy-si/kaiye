@@ -188,3 +188,41 @@ export function formatInterval(entry) {
   if (days < 1.6) return "明天";
   return `${Math.round(days)} 天后`;
 }
+
+export function dumpPackSrs(packIds) {
+  const store = load();
+  const allow = new Set(packIds || []);
+  const out = {};
+  for (const [k, v] of Object.entries(store)) {
+    const packId = String(k).split(":")[0];
+    if (allow.has(packId)) out[k] = v;
+  }
+  return out;
+}
+
+export function mergePackSrs(incoming) {
+  const store = load();
+  let n = 0;
+  for (const [k, remote] of Object.entries(incoming || {})) {
+    const packId = String(k).split(":")[0];
+    if (packId !== "g5" && packId !== "ket") continue;
+    store[k] = mergeSrsEntry(store[k], remote);
+    n += 1;
+  }
+  if (n) save(store);
+  return n;
+}
+
+function mergeSrsEntry(local, remote) {
+  if (!remote) return local || fresh();
+  if (!local || !local.seen) return { ...fresh(), ...remote };
+  if (!remote.seen) return local;
+  return {
+    ease: Math.min(Number(local.ease) || START_EASE, Number(remote.ease) || START_EASE),
+    intervalHours: Math.min(Number(local.intervalHours) || 0, Number(remote.intervalHours) || 0),
+    reps: Math.max(Number(local.reps) || 0, Number(remote.reps) || 0),
+    lapses: Math.max(Number(local.lapses) || 0, Number(remote.lapses) || 0),
+    due: Math.min(Number(local.due) || Infinity, Number(remote.due) || Infinity),
+    seen: true
+  };
+}

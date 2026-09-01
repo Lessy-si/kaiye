@@ -741,6 +741,12 @@ textarea, input[type="text"] {
   resize: vertical;
 }
 textarea { min-height: 7.5rem; }
+textarea.slip-box {
+  min-height: 11rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
 textarea::placeholder, input::placeholder { color: var(--muted); }
 
 .feedback {
