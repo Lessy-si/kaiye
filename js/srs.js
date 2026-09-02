@@ -26,12 +26,31 @@ function load() {
   }
 }
 
+const srsListeners = new Set();
+let silentSrs = 0;
+
 function save(store) {
   try {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(KEY, JSON.stringify(store));
   } catch {
     /* quota / private mode */
+  }
+  if (silentSrs) return;
+  for (const fn of srsListeners) fn(store);
+}
+
+export function onSrsChange(fn) {
+  srsListeners.add(fn);
+  return () => srsListeners.delete(fn);
+}
+
+export function withSilentSrs(fn) {
+  silentSrs += 1;
+  try {
+    return fn();
+  } finally {
+    silentSrs -= 1;
   }
 }
 
@@ -200,17 +219,20 @@ export function dumpPackSrs(packIds) {
   return out;
 }
 
-export function mergePackSrs(incoming) {
-  const store = load();
-  let n = 0;
-  for (const [k, remote] of Object.entries(incoming || {})) {
-    const packId = String(k).split(":")[0];
-    if (packId !== "g5" && packId !== "ket") continue;
-    store[k] = mergeSrsEntry(store[k], remote);
-    n += 1;
-  }
-  if (n) save(store);
-  return n;
+export function mergePackSrs(incoming, allow = ["g5", "ket"]) {
+  const ok = new Set(allow);
+  return withSilentSrs(() => {
+    const store = load();
+    let n = 0;
+    for (const [k, remote] of Object.entries(incoming || {})) {
+      const packId = String(k).split(":")[0];
+      if (!ok.has(packId)) continue;
+      store[k] = mergeSrsEntry(store[k], remote);
+      n += 1;
+    }
+    if (n) save(store);
+    return n;
+  });
 }
 
 function mergeSrsEntry(local, remote) {

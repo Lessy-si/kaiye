@@ -1,9 +1,10 @@
-import { PACKS, SHELF, packTheme, isChildPack } from "./packs.js?v=38";
+import { PACKS, SHELF, packTheme, isChildPack } from "./packs.js?v=39";
 import {
   getDesk,
   activeSeat,
   switchSeat as deskSwitch,
   setSeatPack,
+  setInvite,
   claimSeat,
   todayFlags,
   markReview,
@@ -22,9 +23,9 @@ import {
   resonance,
   remindBanner,
   dayKey
-} from "./desk.js?v=38";
-import { speech, toggleRecord, playBlob, resetSpeech } from "./speak-audio.js?v=38";
-import { unseenQueue, reviewQueue, rateCard, srsStats, formatInterval, formatWait, unseenAll, dumpPackSrs, mergePackSrs } from "./srs.js?v=38";
+} from "./desk.js?v=39";
+import { speech, toggleRecord, playBlob, resetSpeech } from "./speak-audio.js?v=39";
+import { unseenQueue, reviewQueue, rateCard, srsStats, formatInterval, formatWait, unseenAll, dumpPackSrs, mergePackSrs } from "./srs.js?v=39";
 import {
   observePos,
   observeRate,
@@ -39,7 +40,8 @@ import {
   buildSlip,
   parseSlip,
   importSlip
-} from "./loop.js?v=38";
+} from "./loop.js?v=39";
+import { bindCloud, connectCloud, disconnectCloud, cloudState, cloudCfg, startCloud } from "./sync.js?v=39";
 
 const POS = [
   { id: "n.", zh: "名词" },
@@ -96,6 +98,12 @@ function syncFromSeat() {
 }
 
 syncFromSeat();
+
+bindCloud({
+  code: () => getDesk().invite || "",
+  onApply: () => render()
+});
+startCloud();
 
 function toast(msg) {
   const el = $("toast");
@@ -673,6 +681,70 @@ function teacherMove() {
   });
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function familyBlock(d) {
+  const live = cloudState();
+  const cfg = cloudCfg();
+  const line = live.live
+    ? "家里已接通。孩子答错，这台几秒内会看到钉子。"
+    : live.on
+      ? "正在连家里。教室网要放行你填的地址。"
+      : "填云地址，两台设备贴同一口令。阿里云或腾讯云轻量均可。";
+  return `
+    <article class="panel family-live">
+      <p class="kicker">连上家里</p>
+      <h2>${live.live ? "实时" : "还没实时"}</h2>
+      <p>${line}</p>
+      <p class="meta">这台口令 ${escapeHtml(d.invite)}</p>
+      <label class="kicker" for="cloud-url">云地址</label>
+      <input id="cloud-url" type="text" value="${escapeHtml(cfg.url || "")}" placeholder="https://kaiye.你的域名" autocomplete="off" />
+      <label class="kicker" for="cloud-code">另一台的口令</label>
+      <input id="cloud-code" type="text" placeholder="没有就用上面这串" autocomplete="off" />
+      <div class="actions">
+        <button class="primary" type="button" onclick="window.Kaiye.joinCloud()">接通</button>
+        <button class="ghost" type="button" onclick="window.Kaiye.copyInvite()">复制口令</button>
+        ${live.on ? `<button class="ghost" type="button" onclick="window.Kaiye.hangCloud()">断开</button>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function joinCloud() {
+  const url = $("cloud-url")?.value || "";
+  const code = $("cloud-code")?.value || "";
+  if (code.trim() && !setInvite(code)) {
+    toast("口令太短。");
+    return;
+  }
+  connectCloud(url).then((ok) => {
+    toast(ok ? "家里接通了。学习机要能打开这个 https 地址。" : "先填云地址，例如 https://kaiye.你的域名");
+    render();
+  });
+}
+
+function copyInvite() {
+  const text = getDesk().invite || "";
+  const ok = () => toast("口令已复制。贴到另一台课桌。");
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(ok).catch(() => toast(text));
+    return;
+  }
+  toast(text);
+}
+
+function hangCloud() {
+  disconnectCloud();
+  toast("已断开。进度还在这台机器上。");
+  render();
+}
+
 function viewDesk() {
   const d = getDesk();
   const today = dayKey();
@@ -735,6 +807,7 @@ function viewDesk() {
     <div class="desk-hero"></div>
     ${pin}
     ${stack}
+    ${familyBlock(d)}
     <div class="desk-grid">${seats}</div>
     <div class="desk-actions">
       <div class="action-card photo" onclick="window.Kaiye.pickPhoto()">
@@ -770,7 +843,7 @@ function viewMore() {
       <button type="button" onclick="window.Kaiye.setView('memory')"><b>词表</b><span>课后单词与语法对照</span></button>
       <button type="button" onclick="window.Kaiye.setView('progress')"><b>进度</b><span>灯火、墨滴、本周练习</span></button>
       <button type="button" onclick="window.Kaiye.setView('shop')"><b>墨水店</b><span>家里写进盲盒的奖</span></button>
-      <button type="button" onclick="window.Kaiye.setView('slip')"><b>孩子的练习怎么转</b><span>学习机发给家里，盯牢接着转</span></button>
+      <button type="button" onclick="window.Kaiye.setView('slip')"><b>孩子的练习怎么转</b><span>实时连上家里；没网再用家书</span></button>
       <button type="button" onclick="window.Kaiye.setView('install')"><b>装到这台设备</b><span>平板 / 希沃学习机 · 可离线</span></button>
       <button type="button" onclick="window.Kaiye.toggleEye()"><b>护眼台灯</b><span>${eyeOn() ? "开着 · 字暖、蓝光低" : "关着 · 适合夜间亮屏"}</span></button>
     </div>
@@ -795,7 +868,7 @@ function viewInstall() {
       <p><b>希沃 / 学习机</b> 自带浏览器打开地址 → 菜单「添加到桌面」。</p>
       <p><b>安卓平板</b> Chrome 菜单「安装应用」或「添加到主屏幕」。</p>
       <p><b>iPad</b> Safari 分享 → 添加到主屏幕。不要用微信打开。</p>
-      <p class="meta">进度先留在这台机器。练完后：更多 → 孩子的练习怎么转 → 发给家里。</p>
+      <p class="meta">有网时课桌「连上家里」实时同步盯牢。没网仍可离线学，再用家书。</p>
     </article>
   `;
 }
@@ -834,9 +907,9 @@ function viewSlip() {
     <p class="kicker">孩子的练习怎么转</p>
     <article class="panel">
       <h2>三环，不上云</h2>
-      <p>学习机里：选错就钉住，下次打开先练，连对两次才拿掉。现在孩子座位盯牢 ${pinN} 个。</p>
-      <p>发给家里：把家书贴到微信。家长在这台设备收下后，家里课桌接着盯同一批词。</p>
-      <p class="meta">照片和录音不随家书走。成人雅思卡也不会混进去。</p>
+      <p>学习机里：选错就钉住。有网时课桌「连上家里」，家长手机几秒内看到同一批钉子。</p>
+      <p>没网才用家书：把整段贴到微信，家长收下。</p>
+      <p class="meta">照片和录音不上传。成人雅思进度会进同一家庭房间，但家书仍只收孩子练习册。</p>
       <div class="actions">
         <button class="primary" type="button" onclick="window.Kaiye.copySlip()">发给家里</button>
         <button class="ghost" type="button" onclick="document.getElementById('slip-file').click()">从文件收下</button>
@@ -1142,14 +1215,6 @@ function viewRead() {
       ${fb}
     </article>
   `;
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function markPhrase(sentence, phrase, cls) {
@@ -1749,6 +1814,9 @@ window.Kaiye = {
   copyShare,
   copySlip,
   takeSlip,
+  joinCloud,
+  copyInvite,
+  hangCloud,
   toggleEye,
   installApp,
   revealGrammar,

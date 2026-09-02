@@ -1,4 +1,4 @@
-const VERSION = "38";
+const VERSION = "39";
 const CACHE = `kaiye-${VERSION}`;
 const PRECACHE = [
   "./",
@@ -12,6 +12,7 @@ const PRECACHE = [
   "./js/desk.js",
   "./js/srs.js",
   "./js/loop.js",
+  "./js/sync.js",
   "./js/speak-audio.js",
   "./js/get.js",
   "./icons/icon-192.png",

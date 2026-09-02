@@ -138,6 +138,17 @@ export function saveDesk() {
   persist();
 }
 
+export function setInvite(code) {
+  const c = String(code || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .slice(0, 24);
+  if (c.length < 4) return false;
+  desk.invite = c;
+  persist();
+  return true;
+}
+
 export function englishLen(text) {
   return (String(text).match(/[A-Za-z]/g) || []).length;
 }

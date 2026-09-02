@@ -747,6 +747,8 @@ textarea.slip-box {
   font-size: 0.85rem;
   line-height: 1.45;
 }
+.family-live .kicker { margin-top: 0.85rem; }
+.family-live input[type="text"] { margin-top: 0.35rem; }
 textarea::placeholder, input::placeholder { color: var(--muted); }
 
 .feedback {

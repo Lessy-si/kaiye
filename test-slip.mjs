@@ -1,4 +1,4 @@
-import { observePos, buildSlip, parseSlip, importSlip, watchList, cardState } from "./js/loop.js";
+import { observePos, buildSlip, parseSlip, importSlip, watchList, cardState, mergeLoopStore, dumpLoop } from "./js/loop.js";
 import { dumpPackSrs, mergePackSrs } from "./js/srs.js";
 
 const mem = new Map();
@@ -66,5 +66,12 @@ const dumped = dumpPackSrs(["g5", "ket"]);
 assert(dumped["g5:w1"].lapses === 2, "lapse 取较大");
 assert(dumped["g5:w1"].due === 10, "到期取更早");
 assert(!dumped["ielts:x"], "成人卡不进家书 SRS");
+
+mem.clear();
+observePos("child", "g5", "w1", false);
+const dumpedLoop = dumpLoop();
+mem.clear();
+mergeLoopStore(dumpedLoop);
+assert(cardState("child", "g5", "w1").pin, "房间合并后钉子还在");
 
 console.log("slip loop ok");

@@ -19,6 +19,9 @@ function load() {
   }
 }
 
+const loopListeners = new Set();
+let silentSaves = 0;
+
 function save(store) {
   try {
     if (typeof localStorage === "undefined") return;
@@ -26,6 +29,26 @@ function save(store) {
   } catch {
     /* quota / private mode */
   }
+  if (silentSaves) return;
+  for (const fn of loopListeners) fn(store);
+}
+
+export function onLoopChange(fn) {
+  loopListeners.add(fn);
+  return () => loopListeners.delete(fn);
+}
+
+export function withSilentLoop(fn) {
+  silentSaves += 1;
+  try {
+    return fn();
+  } finally {
+    silentSaves -= 1;
+  }
+}
+
+export function dumpLoop() {
+  return load();
 }
 
 function packBucket(store, seatId, packId) {
@@ -259,6 +282,27 @@ export function nextMove({ isChild, due, pins, skills, unseen, flags }) {
 
 export function exportLoop() {
   return JSON.stringify(load(), null, 2);
+}
+
+export function mergeLoopStore(incoming) {
+  const seats = incoming?.seats;
+  if (!seats || typeof seats !== "object") return { ok: false };
+  return withSilentLoop(() => {
+    const store = load();
+    for (const [seatId, seat] of Object.entries(seats)) {
+      for (const [packId, bucket] of Object.entries(seat?.packs || {})) {
+        const local = packBucket(store, seatId, packId);
+        for (const [cardId, rec] of Object.entries(bucket.cards || {})) {
+          local.cards[cardId] = mergeCardRec(local.cards[cardId], rec);
+        }
+        for (const [skillId, rec] of Object.entries(bucket.skills || {})) {
+          local.skills[skillId] = mergeSkillRec(local.skills[skillId], rec);
+        }
+      }
+    }
+    save(store);
+    return { ok: true };
+  });
 }
 
 const SLIP_MARK = "---KAIYE---";
